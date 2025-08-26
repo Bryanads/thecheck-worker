@@ -1,0 +1,1 @@
+python3 -m src.forecast.fetch_and_insert_all
