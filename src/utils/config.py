@@ -12,7 +12,7 @@ DB_PORT = os.getenv("DB_PORT")
 DB_NAME = os.getenv("DB_NAME")
 
 # Chaves de API
-API_KEY_STORMGLASS = os.getenv('API_KEY_3')
+API_KEY_STORMGLASS = os.getenv('API_KEY_1')
 
 # Configurações globais para as requisições
 OUTPUT_DIR = 'data' # Diretório onde os JSONs temporários serão salvos
