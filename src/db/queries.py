@@ -35,7 +35,8 @@ async def insert_forecast_data(spot_id, forecast_data):
                 entry.get('airTemperature_sg'),
                 entry.get('currentSpeed_sg'),
                 entry.get('currentDirection_sg'),
-                entry.get('seaLevel_sg')
+                entry.get('seaLevel_sg'),
+                entry.get('tide_type') # Novo campo
             )
             try:
                 await conn.execute(
@@ -45,9 +46,9 @@ async def insert_forecast_data(spot_id, forecast_data):
                         swell_height_sg, swell_direction_sg, swell_period_sg, secondary_swell_height_sg,
                         secondary_swell_direction_sg, secondary_swell_period_sg, wind_speed_sg,
                         wind_direction_sg, water_temperature_sg, air_temperature_sg, current_speed_sg,
-                        current_direction_sg, sea_level_sg
+                        current_direction_sg, sea_level_sg, tide_type
                     ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18
+                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
                     )
                     ON CONFLICT (spot_id, timestamp_utc) DO UPDATE SET
                         wave_height_sg = EXCLUDED.wave_height_sg,
@@ -65,7 +66,8 @@ async def insert_forecast_data(spot_id, forecast_data):
                         air_temperature_sg = EXCLUDED.air_temperature_sg,
                         current_speed_sg = EXCLUDED.current_speed_sg,
                         current_direction_sg = EXCLUDED.current_direction_sg,
-                        sea_level_sg = EXCLUDED.sea_level_sg;
+                        sea_level_sg = EXCLUDED.sea_level_sg,
+                        tide_type = EXCLUDED.tide_type;
                     """,
                     *values_to_insert
                 )
@@ -74,42 +76,7 @@ async def insert_forecast_data(spot_id, forecast_data):
     finally:
         await release_async_db_connection(conn)
     print("Forecast insertion/update process finished.")
-
-async def insert_extreme_tides_data(spot_id, extremes_data):
-    """
-    Inserts/Updates the tide extremes data into the tides_forecast table.
-    Usa context manager para conexão e cursor.
-    """
-    if not extremes_data:
-        print("No tide extremes data to insert.")
-        return
-
-    print(f"Starting insertion/update of {len(extremes_data)} tide extremes...")
-    conn = await get_async_db_connection()
-    try:
-        for extreme in extremes_data:
-            timestamp_utc = datetime.datetime.fromisoformat(extreme['time'].replace('Z', '+00:00')).replace(tzinfo=datetime.timezone.utc)
-            tide_type = extreme['type']
-            tide_height = extreme.get('height')
-            try:
-                await conn.execute(
-                    """
-                    INSERT INTO tides_forecast (spot_id, timestamp_utc, tide_type, height)
-                    VALUES ($1, $2, $3, $4)
-                    ON CONFLICT (spot_id, timestamp_utc, tide_type) DO UPDATE SET
-                        tide_type = EXCLUDED.tide_type,
-                        height = EXCLUDED.height;
-                    """,
-                    spot_id, timestamp_utc, tide_type, tide_height
-                )
-            except Exception as e:
-                print(f"Error inserting/updating tide extreme for {spot_id} at {timestamp_utc}: {e}")
-    finally:
-        await release_async_db_connection(conn)
-    print("Tide extremes insertion/update process finished.")
-
-    # --- Funções de Leitura de Dados (GET) ---
-
+    
 async def get_all_spots():
     """
     Recupera todos os spots de surf do banco de dados.

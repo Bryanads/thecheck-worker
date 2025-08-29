@@ -1,8 +1,8 @@
 import arrow
 import os
 import json
-import datetime
 import decimal
+from collections import defaultdict
 
 def load_json_data(filename, directory):
     """
@@ -109,68 +109,123 @@ def cardinal_to_degrees(cardinal_direction_str):
     }
     return mapping.get(cardinal_direction_str.upper(), None)
     
-def determine_tide_phase(current_timestamp, tides_extremes):
+def determine_tide_phase(sea_level_data):
     """
-    Determines the tide phase (e.g., 'low', 'high', 'rising', 'falling')
-    for a given timestamp based on a list of tide extreme events.
-
-    Args:
-        current_timestamp (datetime.datetime): The specific timestamp (UTC) for which
-                                                to determine the tide phase.
-        tides_extremes (list): A list of dictionaries, each representing a tide extreme event,
-                                with 'timestamp_utc', 'tide_type' ('low' or 'high'), and 'height'.
-
-    Returns:
-        str: The determined tide phase ('low', 'high', 'rising', 'falling'),
-             or 'unknown' if not enough data.
-    """
-    if not tides_extremes:
-        return 'unknown'
-
-    # Ensure current_timestamp is timezone-aware UTC
-    if current_timestamp.tzinfo is None:
-        current_timestamp = current_timestamp.replace(tzinfo=datetime.timezone.utc)
-    else:
-        current_timestamp = current_timestamp.astimezone(datetime.timezone.utc)
-
-    # Sort tide extremes by timestamp
-    sorted_extremes = sorted(tides_extremes, key=lambda x: x['timestamp_utc'])
-
-    previous_extreme = None
-    next_extreme = None
-
-    # Find the closest previous and next extreme tide events
-    for i, extreme in enumerate(sorted_extremes):
-        extreme_time = extreme['timestamp_utc']
-        if extreme_time <= current_timestamp:
-            previous_extreme = extreme
-        elif extreme_time > current_timestamp:
-            next_extreme = extreme
-            break # Found the first extreme after current_timestamp
-
-    if previous_extreme is None and next_extreme is None:
-        return 'unknown' # No extremes found
-
-    if previous_extreme and current_timestamp == previous_extreme['timestamp_utc']:
-        return previous_extreme['tide_type'] # Exactly at an extreme
-
-    if next_extreme and current_timestamp == next_extreme['timestamp_utc']:
-        return next_extreme['tide_type'] # Exactly at an extreme
-
-    if previous_extreme and not next_extreme:
-        # We are past the last known extreme for the day/range provided
-        # Could extrapolate, but safer to return a known state or 'unknown'
-        return f"after_{previous_extreme['tide_type']}" # Or just 'unknown'
-
-    if not previous_extreme and next_extreme:
-        # We are before the first known extreme for the day/range provided
-        return f"before_{next_extreme['tide_type']}" # Or just 'unknown'
-
-    # Determine rising or falling
-    if previous_extreme and next_extreme:
-        if previous_extreme['tide_type'] == 'low' and next_extreme['tide_type'] == 'high':
-            return 'rising'
-        elif previous_extreme['tide_type'] == 'high' and next_extreme['tide_type'] == 'low':
-            return 'falling'
+    Determina a fase da maré (e.g., 'low', 'high', 'rising', 'falling')
+    para uma lista de dados de nível do mar.
     
-    return 'unknown'
+    Lida corretamente com:
+    - Picos e vales de maré (high/low)
+    - Picos "flats" (mesmo nível por múltiplas horas)
+    - Descontinuidades entre dias (dados apenas diurnos)
+    - Tendências de subida e descida
+    """
+    def _group_by_date(data):
+        """Agrupa dados por dia para tratar descontinuidades."""
+        daily_groups = defaultdict(list)
+        for entry in data:
+            date_str = arrow.get(entry['time']).format('YYYY-MM-DD')
+            daily_groups[date_str].append(entry)
+        return daily_groups
+    
+    def _find_previous_different_level(data, current_index):
+        """Encontra o índice e nível do ponto anterior com nível diferente."""
+        current_level = data[current_index].get('sg')
+        
+        for i in range(current_index - 1, -1, -1):
+            prev_level = data[i].get('sg')
+            if prev_level is not None and prev_level != current_level:
+                return i, prev_level
+        
+        return None, None
+    
+    def _find_next_different_level(data, current_index):
+        """Encontra o índice e nível do ponto posterior com nível diferente."""
+        current_level = data[current_index].get('sg')
+        
+        for i in range(current_index + 1, len(data)):
+            next_level = data[i].get('sg')
+            if next_level is not None and next_level != current_level:
+                return i, next_level
+        
+        return None, None
+    
+    def _classify_tide_point(data, index):
+        """Determina a fase da maré para um ponto específico."""
+        current_level = data[index].get('sg')
+        
+        if current_level is None:
+            return 'unknown'
+        
+        # Busca vizinhos com níveis diferentes (para tratar picos flats)
+        prev_index, prev_level = _find_previous_different_level(data, index)
+        next_index, next_level = _find_next_different_level(data, index)
+        
+        # Classifica baseado nos vizinhos encontrados
+        if prev_level is not None and next_level is not None:
+            # Caso normal: temos vizinhos em ambos os lados
+            if current_level > prev_level and current_level > next_level:
+                return 'high'  # Pico
+            elif current_level < prev_level and current_level < next_level:
+                return 'low'   # Vale
+            elif current_level >= prev_level:
+                return 'rising'  # Subindo
+            else:
+                return 'falling' # Descendo
+        
+        elif prev_level is None and next_level is not None:
+            # Primeiro ponto do dia
+            if current_level < next_level:
+                return 'rising'
+            elif current_level > next_level:
+                return 'falling'
+            else:
+                return 'rising'  # Mesmo nível - assume rising
+        
+        elif prev_level is not None and next_level is None:
+            # Último ponto do dia
+            if current_level > prev_level:
+                return 'rising'
+            elif current_level < prev_level:
+                return 'falling'
+            else:
+                return 'falling'  # Mesmo nível - assume falling
+        
+        else:
+            # Apenas um ponto
+            return 'unknown'
+    
+    def _process_daily_data(daily_data):
+        """Processa os dados de maré de um único dia."""
+        if not daily_data:
+            return []
+        
+        # Ordena os dados do dia por tempo
+        daily_data = sorted(daily_data, key=lambda x: x['time'])
+        
+        for i, entry in enumerate(daily_data):
+            tide_type = _classify_tide_point(daily_data, i)
+            entry['tide_type'] = tide_type
+        
+        return daily_data
+    
+    # Função principal
+    if not sea_level_data:
+        return []
+
+    # Ordena os dados por tempo
+    sorted_data = sorted(sea_level_data, key=lambda x: x['time'])
+    
+    # Agrupa dados por dia para tratar descontinuidades
+    daily_groups = _group_by_date(sorted_data)
+    
+    result = []
+    
+    # Processa cada dia separadamente
+    for date_str in sorted(daily_groups.keys()):
+        daily_data = daily_groups[date_str]
+        processed_daily = _process_daily_data(daily_data)
+        result.extend(processed_daily)
+    
+    # Reordena o resultado final por tempo e retorna
+    return sorted(result, key=lambda x: x['time'])

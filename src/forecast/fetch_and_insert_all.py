@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import decimal
-from src.db.queries import get_all_spots, insert_forecast_data, insert_extreme_tides_data, delete_old_forecast_data
+from src.db.queries import get_all_spots, insert_forecast_data, delete_old_forecast_data
 from src.db.connection import init_async_db_pool
 from src.utils.config import (
     API_KEY_STORMGLASS, REQUEST_DIR, FORECAST_DAYS,
@@ -80,17 +80,6 @@ async def process_spot(spot_details):
         
         # Inserir no banco de dados
         await insert_forecast_data(spot_id, filtered)
-
-    # Etapa 3: Dados de marés extremas
-    print("Processando dados de marés extremas...")
-    tide_raw = load_json_data('tide_extremes_data.json', REQUEST_DIR)
-    if tide_raw and 'data' in tide_raw:
-        tide_data = convert_to_localtime(tide_raw['data'])
-        with open(os.path.join(TREATED_DIR, f'tide_extremes_filtered_{spot_id}.json'), 'w', encoding='utf-8') as f:
-            json.dump(tide_data, f, ensure_ascii=False, indent=4)
-
-        # Inserir no banco de dados
-        await insert_extreme_tides_data(spot_id, tide_data)
     
     print(f"\n--- SUCESSO: Dados para {spot_name} (ID: {spot_id}) processados e inseridos. ---")
 

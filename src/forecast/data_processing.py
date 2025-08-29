@@ -1,9 +1,7 @@
 import arrow
-import os
-import json
 from src.utils.config import REQUEST_DIR, TREATED_DIR
 from src.utils.utils import load_json_data, save_json_data
-
+from src.utils.utils import determine_tide_phase
 
 def filter_forecast_time(data):
     filtered = []
@@ -24,11 +22,15 @@ def merge_stormglass_data(weather_filename, sea_level_filename, output_filename)
         print("Dados inválidos para merge.")
         return None
 
+    # Adiciona o tipo de maré aos dados de nível do mar
+    sea_level_with_tide_type = determine_tide_phase(sea_level_data['data'])
+
     weather_by_time = {entry['time']: entry for entry in weather_data['hours']}
-    sea_level_by_time = {entry['time']: entry.get('sg') for entry in sea_level_data['data']}
+    sea_level_by_time = {entry['time']: entry for entry in sea_level_with_tide_type}
 
     merged = []
     for time_str, weather in weather_by_time.items():
+        sea_level_entry = sea_level_by_time.get(time_str, {})
         merged.append({
             'time': time_str,
             'waveHeight_sg': weather.get('waveHeight', {}).get('sg'),
@@ -46,7 +48,8 @@ def merge_stormglass_data(weather_filename, sea_level_filename, output_filename)
             'airTemperature_sg': weather.get('airTemperature', {}).get('sg'),
             'currentSpeed_sg': weather.get('currentSpeed', {}).get('sg'),
             'currentDirection_sg': weather.get('currentDirection', {}).get('sg'),
-            'seaLevel_sg': sea_level_by_time.get(time_str)
+            'seaLevel_sg': sea_level_entry.get('sg'),
+            'tide_type': sea_level_entry.get('tide_type') # Novo campo
         })
 
     merged.sort(key=lambda x: x['time'])
