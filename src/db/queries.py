@@ -1,18 +1,16 @@
-
-import os
 import datetime
 from src.db.connection import get_async_db_connection, release_async_db_connection
 
 async def insert_forecast_data(spot_id, forecast_data):
     """
-    Inserts/Updates the forecast data into the forecasts table.
-    Usa context manager para conexão e cursor.
+    Insere/Atualiza os dados de previsão na tabela `forecasts`.
+    Adaptado para o schema V2.
     """
     if not forecast_data:
-        print("No hourly data to insert.")
+        print("Nenhum dado horário para inserir.")
         return
 
-    print(f"Starting insertion/update of {len(forecast_data)} hourly forecasts...")
+    print(f"Iniciando inserção/atualização de {len(forecast_data)} previsões horárias...")
     conn = await get_async_db_connection()
     try:
         for entry in forecast_data:
@@ -36,9 +34,10 @@ async def insert_forecast_data(spot_id, forecast_data):
                 entry.get('currentSpeed_sg'),
                 entry.get('currentDirection_sg'),
                 entry.get('seaLevel_sg'),
-                entry.get('tide_type') # Novo campo
+                entry.get('tide_type')
             )
             try:
+                # Query ajustada para o novo schema da tabela 'forecasts'
                 await conn.execute(
                     """
                     INSERT INTO forecasts (
@@ -65,28 +64,28 @@ async def insert_forecast_data(spot_id, forecast_data):
                         water_temperature_sg = EXCLUDED.water_temperature_sg,
                         air_temperature_sg = EXCLUDED.air_temperature_sg,
                         current_speed_sg = EXCLUDED.current_speed_sg,
-                        current_direction_sg = EXCLUDED.current_direction_sg,
+                        current_direction_sg = EXcluded.current_direction_sg,
                         sea_level_sg = EXCLUDED.sea_level_sg,
                         tide_type = EXCLUDED.tide_type;
                     """,
                     *values_to_insert
                 )
             except Exception as e:
-                print(f"Error inserting/updating forecast for {spot_id} at {timestamp_utc}: {e}")
+                print(f"Erro ao inserir/atualizar previsão para {spot_id} em {timestamp_utc}: {e}")
     finally:
         await release_async_db_connection(conn)
-    print("Forecast insertion/update process finished.")
-    
+    print("Processo de inserção/atualização de previsões finalizado.")
+
 async def get_all_spots():
     """
-    Recupera todos os spots de surf do banco de dados.
-    Retorna uma lista de dicionários, cada um representando um spot, com chaves em snake_case.
+    Recupera todos os spots de surf do banco de dados para o worker.
     """
     conn = await get_async_db_connection()
     try:
-        rows = await conn.fetch("SELECT spot_id, spot_name, latitude, longitude, timezone FROM spots ORDER BY spot_id;")
+        # Query ajustada para buscar as novas colunas
+        rows = await conn.fetch("SELECT spot_id, name as spot_name, latitude, longitude, timezone FROM spots ORDER BY spot_id;")
         if not rows:
-            print("No spots found in the database. Please add spots.")
+            print("Nenhum spot encontrado no banco de dados. Por favor, adicione spots.")
             return []
         return [dict(row) for row in rows]
     finally:
@@ -94,31 +93,20 @@ async def get_all_spots():
 
 async def delete_old_forecast_data(days_to_keep=7):
     """
-    Deletes forecast data older than a specified number of days from the database.
+    Deleta dados de previsão mais antigos que um número especificado de dias.
     """
     conn = await get_async_db_connection()
     try:
-        # Define o intervalo de tempo
         time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days_to_keep)
         
-        print(f"\nIniciando limpeza de dados de previsão anteriores a {days_to_keep} dias...")
+        print(f"\nIniciando limpeza de dados de previsão anteriores a {time_threshold.strftime('%Y-%m-%d')}...")
 
-        # Deleta da tabela forecasts
         result_forecasts = await conn.execute(
             "DELETE FROM forecasts WHERE timestamp_utc < $1",
             time_threshold
         )
-        # O resultado do execute retorna uma string como 'DELETE 250'
-        deleted_count_forecasts = int(result_forecasts.split(' ')[1])
-        print(f"{deleted_count_forecasts} registros antigos removidos da tabela 'forecasts'.")
-
-        # Deleta da tabela tides_forecast
-        result_tides = await conn.execute(
-            "DELETE FROM tides_forecast WHERE timestamp_utc < $1",
-            time_threshold
-        )
-        deleted_count_tides = int(result_tides.split(' ')[1])
-        print(f"{deleted_count_tides} registros antigos removidos da tabela 'tides_forecast'.")
+        deleted_count = int(result_forecasts.split(' ')[1]) if 'DELETE' in result_forecasts else 0
+        print(f"{deleted_count} registros antigos removidos da tabela 'forecasts'.")
 
     except Exception as e:
         print(f"Erro durante a limpeza de dados antigos: {e}")
