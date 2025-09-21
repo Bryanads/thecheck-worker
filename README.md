@@ -16,7 +16,9 @@ python3 -m src.forecast.fetch_and_insert_all <spot_id_1> <spot_id_2> ...
 **Exemplo:**
 
 ```bash
-python3 -m src.forecast.fetch_and_insert_all 1 5 12
+python3 -m src.forecast.fetch_and_insert_all 1 2 3 4 5
+python3 -m src.forecast.fetch_and_insert_all 6 7 8 9 10
+python3 -m src.forecast.fetch_and_insert_all 11 12 13 14 15
 ```
 
 > **⚠️ Nota sobre a API:**
