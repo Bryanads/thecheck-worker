@@ -30,9 +30,10 @@ def choose_spot_from_db(available_spots):
         except ValueError:
             print("Entrada inválida. Por favor, digite um número.")
 
-def fetch_and_save_data(api_url, params, headers, filename, label):
+def fetch_and_save_data(api_url, params, api_key, filename, label):
     print(f"Buscando dados de {label}...")
     try:
+        headers = {'Authorization': api_key}
         response = requests.get(api_url, headers=headers, params=params)
         response.raise_for_status()
         data = response.json()

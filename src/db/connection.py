@@ -27,3 +27,13 @@ async def release_async_db_connection(conn):
 	global _async_pool
 	if _async_pool and conn:
 		await _async_pool.release(conn)
+
+async def close_db_pool():
+    """
+    Fecha o pool de conexões para um encerramento limpo.
+    """
+    global _async_pool
+    if _async_pool:
+        await _async_pool.close()
+        _async_pool = None
+        print("Pool de conexões do worker fechado.")
